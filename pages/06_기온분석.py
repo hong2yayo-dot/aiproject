@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("🌡️ 월 별 기온분석")
-st.write("원하는 월을 선택하면 연도별 최고기온과 최저기온을 비교합니다.")
+st.write("원하는 월을 선택하면 1907년부터 2026년까지의 최고기온과 최저기온을 비교합니다.")
 
 # -----------------------------------
 # 2. CSV 파일 불러오기
@@ -25,7 +25,7 @@ def load_data():
 
     file_path = Path(__file__).parent.parent / "temperature.csv"
 
-    # 인코딩 자동 대응
+    # CSV 인코딩 처리
     try:
         df = pd.read_csv(file_path, encoding="cp949")
     except UnicodeDecodeError:
@@ -36,6 +36,7 @@ def load_data():
 
     # 월과 연도 분리
     def parse_date(value):
+
         match = re.match(r"([A-Za-z]{3})-(\d{2})", value)
 
         if not match:
@@ -44,8 +45,12 @@ def load_data():
         month_text = match.group(1)
         year_short = int(match.group(2))
 
-        # 데이터의 연도 범위에 맞춰 세기 구분
-        year = 2000 + year_short if year_short <= 26 else 1900 + year_short
+        # 1907~1999년, 2000~2026년 구분
+        year = (
+            1900 + year_short
+            if year_short >= 7
+            else 2000 + year_short
+        )
 
         try:
             return pd.to_datetime(
@@ -68,14 +73,20 @@ def load_data():
     ]
 
     for col in temperature_columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = pd.to_numeric(
+            df[col],
+            errors="coerce"
+        )
 
-    # 날짜가 잘못된 행 제거
+    # 날짜 오류 데이터 제거
     df = df.dropna(subset=["날짜"])
 
     return df
 
 
+# -----------------------------------
+# 3. 데이터 불러오기
+# -----------------------------------
 try:
     df = load_data()
 
@@ -85,7 +96,7 @@ except Exception as e:
 
 
 # -----------------------------------
-# 3. 월 선택
+# 4. 월 선택
 # -----------------------------------
 month_list = list(range(1, 13))
 
@@ -97,12 +108,15 @@ selected_month = st.selectbox(
 
 
 # -----------------------------------
-# 4. 선택한 월의 데이터 추출
+# 5. 선택한 월의 데이터 추출
 # -----------------------------------
-month_df = df[df["월"] == selected_month].copy()
+month_df = df[
+    (df["월"] == selected_month) &
+    (df["연도"] >= 1907) &
+    (df["연도"] <= 2026)
+].copy()
 
 # 연도별 최고기온과 최저기온 평균 계산
-# 같은 연도와 월에 여러 행이 있으면 평균 사용
 result = (
     month_df
     .groupby("연도", as_index=False)
@@ -111,7 +125,7 @@ result = (
     .sort_values("연도")
 )
 
-# 결측치가 있는 데이터 제외
+# 두 기온이 모두 없는 행 제거
 result = result.dropna(
     subset=["최고기온(℃)", "최저기온(℃)"],
     how="all"
@@ -119,7 +133,7 @@ result = result.dropna(
 
 
 # -----------------------------------
-# 5. 꺾은선 그래프 작성
+# 6. 꺾은선 그래프 작성
 # -----------------------------------
 if result.empty:
 
@@ -140,7 +154,7 @@ else:
                 color="#FF1493",
                 width=3
             ),
-            marker=dict(size=7),
+            marker=dict(size=6),
             connectgaps=False
         )
     )
@@ -156,13 +170,14 @@ else:
                 color="#87CEEB",
                 width=3
             ),
-            marker=dict(size=7),
+            marker=dict(size=6),
             connectgaps=False
         )
     )
 
     # 그래프 레이아웃
     fig.update_layout(
+
         title={
             "text": "월 별 기온분석",
             "x": 0.5,
@@ -170,12 +185,16 @@ else:
             "font": {"size": 25}
         },
 
-        xaxis_title="연도",
-        yaxis_title="온도 (℃)",
-
         xaxis=dict(
+            title="연도",
+            range=[1907, 2026],
             tickmode="linear",
-            dtick=5
+            tick0=1910,
+            dtick=10
+        ),
+
+        yaxis=dict(
+            title="온도 (℃)"
         ),
 
         legend=dict(
@@ -190,6 +209,7 @@ else:
         hovermode="x unified",
 
         template="plotly_white",
+
         height=550
     )
 
@@ -200,7 +220,7 @@ else:
     )
 
     # -----------------------------------
-    # 6. 데이터 표 출력
+    # 7. 분석 데이터 표
     # -----------------------------------
     with st.expander("📊 분석 데이터 확인하기"):
 
@@ -218,33 +238,48 @@ else:
         )
 
     # -----------------------------------
-    # 7. 간단한 분석 결과
+    # 8. 분석 결과
     # -----------------------------------
     st.subheader("📌 분석 결과")
 
     col1, col2 = st.columns(2)
 
-    max_temp = result["최고기온(℃)"].max()
-    min_temp = result["최저기온(℃)"].min()
+    max_data = result.dropna(
+        subset=["최고기온(℃)"]
+    )
 
-    max_year = result.loc[
-        result["최고기온(℃)"].idxmax(), "연도"
-    ]
+    min_data = result.dropna(
+        subset=["최저기온(℃)"]
+    )
 
-    min_year = result.loc[
-        result["최저기온(℃)"].idxmin(), "연도"
-    ]
+    if not max_data.empty:
 
-    with col1:
-        st.metric(
-            "가장 높은 최고기온",
-            f"{max_temp:.1f} ℃"
-        )
-        st.write(f"해당 연도: {int(max_year)}년")
+        max_row = max_data.loc[
+            max_data["최고기온(℃)"].idxmax()
+        ]
 
-    with col2:
-        st.metric(
-            "가장 낮은 최저기온",
-            f"{min_temp:.1f} ℃"
-        )
-        st.write(f"해당 연도: {int(min_year)}년")
+        with col1:
+            st.metric(
+                "가장 높은 최고기온",
+                f"{max_row['최고기온(℃)']:.1f} ℃"
+            )
+
+            st.write(
+                f"해당 연도: {int(max_row['연도'])}년"
+            )
+
+    if not min_data.empty:
+
+        min_row = min_data.loc[
+            min_data["최저기온(℃)"].idxmin()
+        ]
+
+        with col2:
+            st.metric(
+                "가장 낮은 최저기온",
+                f"{min_row['최저기온(℃)']:.1f} ℃"
+            )
+
+            st.write(
+                f"해당 연도: {int(min_row['연도'])}년"
+            )
