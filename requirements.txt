@@ -6,3 +6,5 @@ streamlit-folium>=0.18
 streamlit
 pandas
 plotly
+scikit-learn
+numpy
