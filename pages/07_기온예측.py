@@ -10,18 +10,20 @@ import numpy as np
 # ----------------------------------
 
 st.set_page_config(
-    page_title="월별 기온 예측 프로그램",
+    page_title="월별 평균 기온 예측",
     page_icon="🌡️",
     layout="wide"
 )
 
 st.title("🌡️ 월별 평균 기온 예측 프로그램")
+
 st.write(
-    "과거 기온 데이터를 이용하여 선형회귀 알고리즘으로 "
+    "과거 기온 데이터를 학습하여 선형회귀 알고리즘으로 "
     "미래의 평균 기온을 예측합니다."
 )
 
 st.divider()
+
 
 # ----------------------------------
 # 2. CSV 파일 불러오기
@@ -29,12 +31,13 @@ st.divider()
 
 @st.cache_data
 def load_data():
+
     df = pd.read_csv(
         "temperature.csv",
         encoding="cp949"
     )
 
-    # 날짜 데이터 처리
+    # 영문 월을 숫자로 변환
     month_map = {
         "Jan": 1, "Feb": 2, "Mar": 3,
         "Apr": 4, "May": 5, "Jun": 6,
@@ -42,10 +45,12 @@ def load_data():
         "Oct": 10, "Nov": 11, "Dec": 12
     }
 
+    # 연도 추출
     df["연도"] = df["일시"].apply(
         lambda x: 2000 + int(x.split("-")[1])
     )
 
+    # 월 추출
     df["월"] = df["일시"].apply(
         lambda x: month_map[x.split("-")[0]]
     )
@@ -70,6 +75,7 @@ st.subheader("📌 예측 조건 선택")
 col1, col2 = st.columns(2)
 
 with col1:
+
     selected_month = st.selectbox(
         "예측할 월을 선택하세요",
         list(range(1, 13)),
@@ -77,9 +83,10 @@ with col1:
     )
 
 with col2:
+
     prediction_year = st.number_input(
         "예측할 연도를 입력하세요",
-        min_value=2007,
+        min_value=2026,
         max_value=2100,
         value=2027,
         step=1
@@ -89,17 +96,20 @@ st.divider()
 
 
 # ----------------------------------
-# 4. 선택한 월의 데이터 추출
+# 4. 선택한 월의 실제 데이터 추출
+# 2025년까지만 사용
 # ----------------------------------
 
 month_data = df[
-    (df["월"] == selected_month)
-    & (df["평균기온(℃)"].notna())
+    (df["월"] == selected_month) &
+    (df["연도"] <= 2025) &
+    (df["평균기온(℃)"].notna())
 ].copy()
 
 month_data = month_data.sort_values("연도")
 
 if len(month_data) < 2:
+
     st.error("예측을 위한 데이터가 부족합니다.")
     st.stop()
 
@@ -108,19 +118,26 @@ if len(month_data) < 2:
 # 5. 선형회귀 모델 학습
 # ----------------------------------
 
+# 입력 데이터: 연도
 X = month_data[["연도"]]
+
+# 정답 데이터: 평균 기온
 y = month_data["평균기온(℃)"]
 
+# 선형회귀 모델 생성
 model = LinearRegression()
 
+# 모델 학습
 model.fit(X, y)
 
-# 사용자가 입력한 연도의 기온 예측
+# 미래 기온 예측
 predicted_temp = model.predict(
-    pd.DataFrame({"연도": [prediction_year]})
+    pd.DataFrame({
+        "연도": [prediction_year]
+    })
 )[0]
 
-# 회귀식의 기울기와 절편
+# 기울기와 절편
 slope = model.coef_[0]
 intercept = model.intercept_
 
@@ -132,23 +149,28 @@ r2 = model.score(X, y)
 # 6. 예측 결과 출력
 # ----------------------------------
 
-st.subheader(f"🌡️ {selected_month}월 평균 기온 예측 결과")
+st.subheader(
+    f"🌡️ {selected_month}월 평균 기온 예측 결과"
+)
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
+
     st.metric(
         "예측 연도",
         f"{prediction_year}년"
     )
 
 with col2:
+
     st.metric(
         "예측 평균 기온",
         f"{predicted_temp:.2f} ℃"
     )
 
 with col3:
+
     st.metric(
         "결정계수 (R²)",
         f"{r2:.3f}"
@@ -159,32 +181,42 @@ with col3:
 # 7. 그래프 데이터 생성
 # ----------------------------------
 
+# 실제 데이터 시작 연도
 min_year = int(month_data["연도"].min())
-max_year = max(
-    int(month_data["연도"].max()),
+
+# 실제 데이터는 2025년까지만
+max_year = 2025
+
+# 회귀선은 예측 연도까지 연장
+line_end_year = max(
+    max_year,
     int(prediction_year)
 )
 
-# 회귀선의 좌표
 line_years = np.linspace(
     min_year,
-    max_year,
+    line_end_year,
     200
 )
 
+# 회귀선을 이용한 기온 계산
 line_temps = model.predict(
-    pd.DataFrame({"연도": line_years})
+    pd.DataFrame({
+        "연도": line_years
+    })
 )
 
+
 # ----------------------------------
-# 8. Plotly 그래프
+# 8. 그래프 그리기
 # ----------------------------------
 
 st.subheader("📈 과거 기온 및 미래 기온 예측 그래프")
 
 fig = go.Figure()
 
-# 실제 기온 데이터
+
+# 실제 평균 기온
 fig.add_trace(
     go.Scatter(
         x=month_data["연도"],
@@ -200,7 +232,8 @@ fig.add_trace(
     )
 )
 
-# 실제 데이터를 연결하는 선
+
+# 실제 기온 변화 연결선
 fig.add_trace(
     go.Scatter(
         x=month_data["연도"],
@@ -214,6 +247,7 @@ fig.add_trace(
         hoverinfo="skip"
     )
 )
+
 
 # 선형회귀 예측선
 fig.add_trace(
@@ -229,17 +263,18 @@ fig.add_trace(
     )
 )
 
+
 # 예측 기온 표시
 fig.add_trace(
     go.Scatter(
         x=[prediction_year],
         y=[predicted_temp],
         mode="markers+text",
-        name="예측 기온",
+        name="미래 예측 기온",
         text=[f"{predicted_temp:.2f}℃"],
         textposition="top center",
         marker=dict(
-            color="#FF0000",
+            color="red",
             size=16,
             symbol="star"
         ),
@@ -248,17 +283,23 @@ fig.add_trace(
     )
 )
 
-# 실제 관측값과 회귀선 사이의 오차 표시
+
+# 실제 기온과 회귀선 사이의 오차 표시
 for _, row in month_data.iterrows():
 
     fitted_temp = model.predict(
-        pd.DataFrame({"연도": [row["연도"]]})
+        pd.DataFrame({
+            "연도": [row["연도"]]
+        })
     )[0]
 
     fig.add_trace(
         go.Scatter(
             x=[row["연도"], row["연도"]],
-            y=[row["평균기온(℃)"], fitted_temp],
+            y=[
+                row["평균기온(℃)"],
+                fitted_temp
+            ],
             mode="lines",
             line=dict(
                 color="gray",
@@ -271,7 +312,7 @@ for _, row in month_data.iterrows():
     )
 
 
-# 그래프 꾸미기
+# 그래프 디자인
 fig.update_layout(
     title=f"{selected_month}월 평균 기온과 선형회귀 예측",
     xaxis_title="연도",
@@ -290,7 +331,11 @@ fig.update_layout(
 
 fig.update_xaxes(
     dtick=2,
-    showgrid=True
+    showgrid=True,
+    range=[
+        min_year - 0.5,
+        line_end_year + 1
+    ]
 )
 
 fig.update_yaxes(
@@ -333,8 +378,10 @@ st.write(
     f"**결정계수(R²):** {r2:.4f}"
 )
 
+
 # 기울기 해석
 if slope > 0:
+
     st.info(
         f"📈 기울기가 양수({slope:.4f})입니다. "
         "과거 데이터에서는 시간이 지날수록 "
@@ -342,6 +389,7 @@ if slope > 0:
     )
 
 elif slope < 0:
+
     st.info(
         f"📉 기울기가 음수({slope:.4f})입니다. "
         "과거 데이터에서는 시간이 지날수록 "
@@ -349,9 +397,10 @@ elif slope < 0:
     )
 
 else:
+
     st.info(
-        "기울기가 0에 가까워 평균 기온에 뚜렷한 "
-        "선형 변화 경향이 나타나지 않습니다."
+        "기울기가 0이므로 평균 기온에 "
+        "선형적인 변화 경향이 없습니다."
     )
 
 
@@ -373,7 +422,7 @@ st.markdown("""
 
 - 입력 데이터(X): 연도
 - 정답 데이터(Y): 해당 월의 평균 기온
-- 학습 방법: 선형회귀
+- 학습 방법: 선형회귀 알고리즘
 - 예측 결과: 사용자가 선택한 연도의 평균 기온
 
 ### ② 어떻게 학습할까요?
@@ -386,7 +435,7 @@ st.markdown("""
 ### ③ 그래프 읽는 방법
 
 - 🔵 파란색 점: 실제로 관측된 평균 기온
-- 연한 파란색 선: 실제 기온의 연도별 변화
+- 연한 파란색 선: 실제 기온 변화
 - 💗 핑크색 선: 선형회귀가 찾아낸 최적의 직선
 - ⭐ 빨간색 별: 사용자가 입력한 연도의 예측 기온
 - 회색 점선: 실제 기온과 회귀선 사이의 차이(오차)
@@ -405,12 +454,14 @@ st.markdown("""
 가정하여 계산합니다.
 
 따라서 실제 미래 기온과 예측 결과는 다를 수 있습니다.
-특히 과거 데이터 범위를 크게 벗어난 연도를 예측할 때는
-주의해야 합니다.
+
+특히 과거 데이터 범위를 크게 벗어난 연도를
+예측할 때는 주의해야 합니다.
 """)
 
+
 # ----------------------------------
-# 11. 데이터 확인
+# 11. 실제 데이터 확인
 # ----------------------------------
 
 with st.expander("📋 선택한 월의 실제 기온 데이터 확인"):
@@ -425,7 +476,14 @@ with st.expander("📋 선택한 월의 실제 기온 데이터 확인"):
         hide_index=True
     )
 
+
+# ----------------------------------
+# 12. 안내 문구
+# ----------------------------------
+
+st.divider()
+
 st.caption(
-    "※ 본 프로그램은 과거 월별 평균 기온 데이터를 "
-    "이용한 교육용 선형회귀 예측 프로그램입니다."
+    "※ 실제 관측 데이터는 2025년까지만 사용합니다. "
+    "2026년 이후의 기온은 선형회귀 알고리즘으로 계산한 예측값입니다."
 )
